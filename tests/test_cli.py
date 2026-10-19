@@ -158,3 +158,13 @@ class TestFileEncoding(unittest.TestCase):
             self.assertNotIn("Traceback", buf.getvalue())
         finally:
             os.unlink(path)
+
+
+class TestParseProxyRange(unittest.TestCase):
+    def test_port_out_of_range(self):
+        from llantern import parse_proxy
+        for bad in ["127.0.0.1:0", "127.0.0.1:65536", "127.0.0.1:99999"]:
+            with self.assertRaises(LlantError, msg=bad):
+                parse_proxy(bad)
+        self.assertEqual(parse_proxy("127.0.0.1:1"), ("127.0.0.1", 1))
+        self.assertEqual(parse_proxy("127.0.0.1:65535"), ("127.0.0.1", 65535))

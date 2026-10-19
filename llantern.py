@@ -455,10 +455,13 @@ def parse_proxy(s):
     host, port = s.rsplit(":", 1)
     if not port.isdigit():
         raise LlantError("port proxy bukan angka: %s" % s)
+    port_n = int(port)
+    if not 1 <= port_n <= 65535:
+        raise LlantError("port proxy di luar rentang 1-65535: %s" % s)
     # Terima IPv6 dalam kurung: [::1]:9050
     if len(host) > 2 and host.startswith("[") and host.endswith("]"):
         host = host[1:-1]
-    return host, int(port)
+    return host, port_n
 
 
 def fmt_size(n):
