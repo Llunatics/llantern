@@ -76,6 +76,29 @@ llantern — http://example123.onion/
   struktur : 1 form · 2 gambar · 1 script · ~340 kata
 ```
 
+## Skema JSON (`--json`)
+
+```jsonc
+{
+  "url": "http://example123.onion/",
+  "status": 200, "reason": "OK",
+  "elapsed_s": 1.24, "bytes": 49374,
+  "content_type": "text/html; charset=utf-8",
+  "is_onion": true,
+  "redirects": ["http://example123.onion/old"],
+  "page": {                       // null jika bukan HTML / status != 200
+    "title": "Pasar Contoh",
+    "description": "Contoh hidden service.",
+    "headings": [{"level": "h1", "text": "Selamat datang"}],
+    "links": [{"url": "http://xyz789.onion/a", "text": "x", "class": "onion"}],
+    "link_total": 6,
+    "link_counts": {"onion": 1, "external": 2},
+    "top_domains": [{"domain": "example.com", "count": 2}],
+    "forms": 1, "images": 2, "scripts": 1, "words": 181
+  }
+}
+```
+
 ## Klasifikasi link
 
 | Kelas | Arti |
