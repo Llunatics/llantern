@@ -483,10 +483,12 @@ def _term_safe(s):
 
 
 def report_text(res, insp, proxy_str):
+    # fuzz round 2: url (argumen/--file) & reason (dari wire) bisa membawa
+    # ANSI escape -> _term_safe untuk semua teks yang dicetak ke terminal.
     L = []
-    L.append("llantern — %s" % res["url"])
+    L.append("llantern — %s" % _term_safe(res["url"]))
     L.append("  status   : %d %s (%.2fs, %s, via %s)"
-             % (res["status"], res["reason"], res["elapsed"],
+             % (res["status"], _term_safe(res["reason"]), res["elapsed"],
                 fmt_size(len(res["body"])), proxy_str))
     if res["redirects"]:
         L.append("  redirect : %d hop" % len(res["redirects"]))
@@ -570,7 +572,8 @@ def main(argv=None):
                         args.max_redirects, args.user_agent)
         except (FetchError, LlantError) as e:
             # LlantError di sini = proxy mati di tengah jalan; hentikan semua
-            print("✗ %s\n  galat: %s" % (url, e), file=sys.stderr)
+            print("✗ %s\n  galat: %s" % (_term_safe(url), _term_safe(e)),
+                  file=sys.stderr)
             if isinstance(e, LlantError):
                 return 2
             failed += 1
@@ -614,8 +617,8 @@ def main(argv=None):
                 print(report_text(res, page, args.proxy))
             else:
                 print("llantern — %s\n  status: %d %s (%s, %s) — bukan HTML, isi dilewati"
-                      % (res["url"], res["status"], res["reason"],
-                         ctype or "content-type tak dikenal",
+                      % (_term_safe(res["url"]), res["status"], _term_safe(res["reason"]),
+                         _term_safe(ctype or "content-type tak dikenal"),
                          fmt_size(len(res["body"]))))
             if i < len(urls) - 1:
                 print()

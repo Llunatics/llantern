@@ -168,3 +168,26 @@ class TestParseProxyRange(unittest.TestCase):
                 parse_proxy(bad)
         self.assertEqual(parse_proxy("127.0.0.1:1"), ("127.0.0.1", 1))
         self.assertEqual(parse_proxy("127.0.0.1:65535"), ("127.0.0.1", 65535))
+
+
+class TestTermSafeReport(unittest.TestCase):
+    # fuzz round 2: ANSI escape di URL (argumen/--file) & reason (dari wire)
+    # tidak boleh lolos ke output terminal.
+    def _res(self, url, reason):
+        return {"url": url, "status": 200, "reason": reason, "elapsed": 1.0,
+                "body": b"x", "redirects": []}
+
+    def _insp(self):
+        return {"title": "", "description": "", "headings": [], "link_counts": {},
+                "link_total": 0, "top_domains": [], "forms": 0, "images": 0,
+                "scripts": 0, "words": 0}
+
+    def test_report_text_strips_ansi(self):
+        from llantern import report_text
+        out = report_text(
+            self._res("http://evil.onion/\x1b[2J\x1b]0;pwned\x07",
+                      "\x1b[31mHostile"),
+            self._insp(), "127.0.0.1:9050")
+        self.assertNotIn("\x1b", out)
+        self.assertNotIn("\x07", out)
+        self.assertIn("evil.onion", out)

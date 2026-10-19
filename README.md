@@ -12,7 +12,7 @@ Lentera buat dark web — ambil halaman `.onion` lewat Tor, lalu bedah strukturn
 - Bedah halaman: judul, meta description, heading h1–h6, link, form, gambar, script, jumlah kata
 - Klasifikasi link: `onion` (hidden service lain) · `external` · `internal` · `anchor` · `mailto` · `other`
 - Output laporan teks atau `--json`; opsi `--save-html` untuk arsip mentah
-- 41 unit/integration test (termasuk SOCKS5 palsu + HTTP server lokal)
+- 51 unit/integration test (termasuk SOCKS5 palsu + HTTP server lokal)
 - Pengerasan: URL dengan CR/LF ditolak (anti request-smuggling), port tak
   valid / timeout / TLS gagal menjadi `FetchError` yang rapi (bukan
   traceback), batas 200 header, batas 5000 link & 2000 heading anti-DoS
@@ -141,8 +141,10 @@ Suite memakai **SOCKS5 palsu + HTTP server lokal** (thread), jadi seluruh jalur 
 llantern/
 ├── llantern.py   # seluruh tool (SOCKS5, HTTP, inspector, CLI)
 ├── tests/
+│   ├── test_cli.py      # unit argumen CLI & exit code
 │   ├── test_fetch.py    # integrasi via SOCKS5 palsu
-│   └── test_inspect.py  # unit PageInspector
+│   ├── test_inspect.py  # unit PageInspector
+│   └── test_main_e2e.py # e2e main() via server lokal
 ├── README.md
 ├── LICENSE
 └── .gitignore
