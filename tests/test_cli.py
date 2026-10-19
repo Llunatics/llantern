@@ -138,3 +138,22 @@ class TestSigpipe(unittest.TestCase):
     def test_broken_pipe_no_traceback(self):
         import signal
         self.assertEqual(signal.getsignal(signal.SIGPIPE), signal.SIG_DFL)
+
+
+class TestFileEncoding(unittest.TestCase):
+    def test_non_utf8_file_no_traceback(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("wb", suffix=".txt",
+                                         delete=False) as f:
+            f.write(b"http://abc.onion/\xff\xfe\n# komen\n")
+            path = f.name
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                # Proxy mati -> LlantError/SystemExit, tapi BUKAN traceback
+                # UnicodeDecodeError.
+                with self.assertRaises((LlantError, SystemExit)):
+                    main(["--file", path, "--proxy", "127.0.0.1:1",
+                          "--timeout", "1"])
+        finally:
+            os.unlink(path)
