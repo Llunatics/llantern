@@ -51,6 +51,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Length", "99999999")
             self.end_headers()
+        elif self.path == "/stall":
+            # Kirim header lalu diam: memicu socket.timeout di sisi klien.
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", "100")
+            self.end_headers()
+            time.sleep(4)
+        elif self.path == "/banjir-header":
+            self.send_response(200)
+            for i in range(300):
+                self.send_header("X-Pad-%d" % i, "y" * 50)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        elif self.path == "/techunked":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Transfer-Encoding", "gzip, chunked")
+            self.end_headers()
+            self.wfile.write(CHUNKED)
         else:
             self._send(404, b"tak ada")
 
@@ -177,6 +196,34 @@ class TestFetch(unittest.TestCase):
     def test_batas_max_bytes(self):
         with self.assertRaises(FetchError):
             self._fetch("/gede")
+
+    def test_port_tidak_valid_jadi_fetch_error(self):
+        # Dulu: ValueError mentah (traceback). Sekarang: FetchError yang rapi.
+        with self.assertRaises(FetchError):
+            fetch("http://127.0.0.1:abc/", proxy=self.proxy, timeout=10,
+                  max_bytes=1000, max_redirects=5, user_agent="t")
+
+    def test_url_crlf_ditolak(self):
+        with self.assertRaises(FetchError):
+            fetch("http://127.0.0.1:%d/a\r\nX: 1" % self.hport,
+                  proxy=self.proxy, timeout=10, max_bytes=1000,
+                  max_redirects=5, user_agent="t")
+
+    def test_timeout_jadi_fetch_error_bukan_traceback(self):
+        with self.assertRaises(FetchError):
+            self._fetch("/stall", timeout=1)
+
+    def test_banjir_header_ditolak(self):
+        with self.assertRaises(FetchError):
+            self._fetch("/banjir-header")
+
+    def test_transfer_encoding_gabung_tetap_dechunk(self):
+        r = self._fetch("/techunked")
+        self.assertEqual(r["body"], b"Wikipedia")
+
+    def test_parse_proxy_ipv6_kurung(self):
+        self.assertEqual(parse_proxy("[::1]:9050"), ("::1", 9050))
+        self.assertEqual(parse_proxy("127.0.0.1:9050"), ("127.0.0.1", 9050))
 
     def test_domain_dikirim_mentah_ke_proxy(self):
         # .onion TIDAK boleh di-resolve lokal; proxy yang menerima hostname

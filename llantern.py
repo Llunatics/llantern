@@ -73,7 +73,10 @@ def socks5_connect(proxy_host, proxy_port, dest_host, dest_port, timeout):
             raise LlantError("proxy %s:%d menolak handshake SOCKS5 (no-auth)"
                              % (proxy_host, proxy_port))
         # permintaan CONNECT, alamat sebagai domain agar proxy yang resolve
-        host_b = dest_host.encode("idna")
+        try:
+            host_b = dest_host.encode("idna")
+        except (UnicodeError, ValueError):
+            raise FetchError("nama host tidak valid: %s" % dest_host)
         if len(host_b) > 255:
             raise FetchError("nama host terlalu panjang: %s" % dest_host)
         req = (b"\x05\x01\x00\x03" + bytes([len(host_b)]) + host_b
@@ -151,16 +154,22 @@ def _read_response(fp, max_bytes):
     reason = parts[2] if len(parts) > 2 else ""
 
     headers = {}
-    while True:
+    # Batas jumlah header: server jahat bisa streaming header tanpa akhir
+    # (max_bytes hanya membatasi body).
+    for _ in range(200):
         line = fp.readline(8192).decode("iso-8859-1")
         if line in ("\r\n", "\n", ""):
             break
         if ":" in line:
             k, v = line.split(":", 1)
             headers[k.strip().lower()] = v.strip()
+    else:
+        raise FetchError("terlalu banyak header HTTP (>200)")
 
     body = b""
-    if headers.get("transfer-encoding", "").lower() == "chunked":
+    # Transfer-Encoding bisa berupa daftar ("gzip, chunked"): yang penting
+    # ada token chunked di dalamnya.
+    if "chunked" in headers.get("transfer-encoding", "").lower():
         while True:
             size_line = fp.readline(256).decode("iso-8859-1").strip()
             try:
@@ -213,13 +222,20 @@ def fetch(url, proxy, timeout, max_bytes, max_redirects, user_agent):
         url = "http://" + url
     visited = []
     for _ in range(max_redirects + 1):
+        if "\r" in url or "\n" in url:
+            # Jangan biarkan CR/LF lolos ke request line mentah (request
+            # smuggling via argumen CLI yang jahat / Location redirect).
+            raise FetchError("URL mengandung karakter kontrol: %r" % url[:80])
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
             raise FetchError("skema tidak didukung: %s" % parsed.scheme)
         host = parsed.hostname or ""
         if not host:
             raise FetchError("URL tanpa host: %s" % url)
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except ValueError:
+            raise FetchError("port tidak valid: %s" % url)
         path = parsed.path or "/"
         if parsed.query:
             path += "?" + parsed.query
@@ -228,9 +244,12 @@ def fetch(url, proxy, timeout, max_bytes, max_redirects, user_agent):
         sock = socks5_connect(proxy[0], proxy[1], host, port, timeout)
         try:
             sock.settimeout(timeout)
-            if parsed.scheme == "https":
-                ctx = tls_context(is_onion)
-                sock = ctx.wrap_socket(sock, server_hostname=host)
+            try:
+                if parsed.scheme == "https":
+                    ctx = tls_context(is_onion)
+                    sock = ctx.wrap_socket(sock, server_hostname=host)
+            except OSError as e:
+                raise FetchError("TLS gagal ke %s: %s" % (host, e))
             req = (
                 "GET %s HTTP/1.1\r\n"
                 "Host: %s\r\n"
@@ -240,12 +259,17 @@ def fetch(url, proxy, timeout, max_bytes, max_redirects, user_agent):
                 "Connection: close\r\n\r\n"
             ) % (path, host, user_agent)
             t0 = time.monotonic()
-            sock.sendall(req.encode("ascii", "ignore"))
-            fp = sock.makefile("rb")
             try:
-                status, reason, headers, body = _read_response(fp, max_bytes)
-            finally:
-                fp.close()
+                sock.sendall(req.encode("ascii", "ignore"))
+                fp = sock.makefile("rb")
+                try:
+                    status, reason, headers, body = _read_response(fp, max_bytes)
+                finally:
+                    fp.close()
+            except OSError as e:
+                # Termasuk socket.timeout: server lambat/mati -> FetchError,
+                # bukan traceback mentah.
+                raise FetchError("I/O saat mengambil %s: %s" % (host, e))
             elapsed = time.monotonic() - t0
         finally:
             try:
@@ -277,6 +301,10 @@ def fetch(url, proxy, timeout, max_bytes, max_redirects, user_agent):
 # ---------------------------------------------------------------------------
 
 class PageInspector(HTMLParser):
+    # Batas agar halaman jahat (jutaan link/heading) tidak menghabiskan RAM.
+    MAX_LINKS = 5000
+    MAX_HEADINGS = 2000
+
     def __init__(self, base_url):
         super().__init__(convert_charrefs=True)
         self.base = base_url
@@ -347,13 +375,14 @@ class PageInspector(HTMLParser):
         elif tag in ("h1", "h2", "h3", "h4", "h5", "h6") and self._cur_heading:
             lvl, txt = self._cur_heading
             txt = " ".join(txt.split())
-            if txt:
+            if txt and len(self.headings) < self.MAX_HEADINGS:
                 self.headings.append((lvl, txt[:160]))
             self._cur_heading = None
         elif tag == "a" and self._cur_link:
             absu, txt, cls = self._cur_link
             txt = " ".join(txt.split())
-            self.links.append((absu, txt[:120], cls))
+            if len(self.links) < self.MAX_LINKS:
+                self.links.append((absu, txt[:120], cls))
             self._cur_link = None
         elif tag in ("script", "style"):
             self._in_script_style = False
@@ -374,12 +403,13 @@ class PageInspector(HTMLParser):
         if self._cur_link:
             absu, txt, cls = self._cur_link
             txt = " ".join(txt.split())
-            self.links.append((absu, txt[:120], cls))
+            if len(self.links) < self.MAX_LINKS:
+                self.links.append((absu, txt[:120], cls))
             self._cur_link = None
         if self._cur_heading:
             lvl, txt = self._cur_heading
             txt = " ".join(txt.split())
-            if txt:
+            if txt and len(self.headings) < self.MAX_HEADINGS:
                 self.headings.append((lvl, txt[:160]))
             self._cur_heading = None
         by_class = {}
@@ -417,6 +447,9 @@ def parse_proxy(s):
     host, port = s.rsplit(":", 1)
     if not port.isdigit():
         raise LlantError("port proxy bukan angka: %s" % s)
+    # Terima IPv6 dalam kurung: [::1]:9050
+    if len(host) > 2 and host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
     return host, int(port)
 
 
@@ -489,6 +522,8 @@ def main(argv=None):
         raise LlantError("--timeout harus positif")
     if args.max_bytes <= 0:
         raise LlantError("--max-bytes harus positif")
+    if args.max_redirects < 0:
+        raise LlantError("--max-redirects tidak boleh negatif")
     proxy = parse_proxy(args.proxy)
 
     urls = list(args.urls)

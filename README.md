@@ -12,7 +12,10 @@ Lentera buat dark web — ambil halaman `.onion` lewat Tor, lalu bedah strukturn
 - Bedah halaman: judul, meta description, heading h1–h6, link, form, gambar, script, jumlah kata
 - Klasifikasi link: `onion` (hidden service lain) · `external` · `internal` · `anchor` · `mailto` · `other`
 - Output laporan teks atau `--json`; opsi `--save-html` untuk arsip mentah
-- 20 unit/integration test (termasuk SOCKS5 palsu + HTTP server lokal)
+- 41 unit/integration test (termasuk SOCKS5 palsu + HTTP server lokal)
+- Pengerasan: URL dengan CR/LF ditolak (anti request-smuggling), port tak
+  valid / timeout / TLS gagal menjadi `FetchError` yang rapi (bukan
+  traceback), batas 200 header, batas 5000 link & 2000 heading anti-DoS
 
 ## Syarat
 

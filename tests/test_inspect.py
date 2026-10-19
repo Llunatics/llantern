@@ -95,3 +95,34 @@ class TestInspector(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBatas(unittest.TestCase):
+    def test_link_dibatasi(self):
+        insp = PageInspector("http://x.onion/")
+        insp.feed("<a href='/a'>x</a>" * (PageInspector.MAX_LINKS + 100))
+        self.assertEqual(insp.summary()["link_total"], PageInspector.MAX_LINKS)
+
+    def test_heading_dibatasi(self):
+        insp = PageInspector("http://x.onion/")
+        insp.feed("<h1>t</h1>" * (PageInspector.MAX_HEADINGS + 100))
+        self.assertEqual(len(insp.summary()["headings"]),
+                         PageInspector.MAX_HEADINGS)
+
+
+class TestFuzzParser(unittest.TestCase):
+    def test_sampah_tidak_meledak(self):
+        import random
+        random.seed(42)
+        pieces = ["<a href=", "<h1>", "</", "<title>", "<script>",
+                  "http://x.onion/", '"', "'", ">", "\x00", "&amp;",
+                  "<!--", "<!DOCTYPE", "<meta", "="]
+        for _ in range(300):
+            s = "".join(random.choice(pieces)
+                        for _ in range(random.randint(1, 40)))
+            insp = PageInspector("http://x.onion/")
+            try:
+                insp.feed(s)
+                insp.summary()
+            except Exception as e:
+                self.fail("parser meledak pada %r: %s" % (s[:60], e))
