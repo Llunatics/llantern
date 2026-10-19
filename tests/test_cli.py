@@ -150,10 +150,12 @@ class TestFileEncoding(unittest.TestCase):
         try:
             buf = io.StringIO()
             with redirect_stdout(buf):
-                # Proxy mati -> LlantError/SystemExit, tapi BUKAN traceback
-                # UnicodeDecodeError.
-                with self.assertRaises((LlantError, SystemExit)):
-                    main(["--file", path, "--proxy", "127.0.0.1:1",
-                          "--timeout", "1"])
+                # Proxy mati -> rc 1 dengan pesan galat bersih, BUKAN
+                # traceback UnicodeDecodeError.
+                rc = main(["--file", path, "--proxy", "127.0.0.1:1",
+                           "--timeout", "1"])
+            self.assertEqual(rc, 1)
+            self.assertNotIn("Traceback", buf.getvalue())
+            self.assertIn("galat", buf.getvalue())
         finally:
             os.unlink(path)
