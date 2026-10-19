@@ -98,3 +98,18 @@ class TestMainE2E(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAnsiInjection(unittest.TestCase):
+    def test_report_strips_hostile_title(self):
+        from llantern import PageInspector, report_text
+        insp = PageInspector("http://x/")
+        insp.feed("<title>\x1b[2JHIJACK</title><h1>a\x07b</h1>")
+        insp.close()
+        page = insp.summary()
+        res = {"url": "http://x/", "status": 200, "reason": "OK",
+               "elapsed": 1.0, "body": b"x", "text": "x", "redirects": []}
+        out = report_text(res, page, "p")
+        self.assertNotIn("\x1b", out)
+        self.assertNotIn("\x07", out)
+        self.assertIn("HIJACK", out)

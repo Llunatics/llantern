@@ -18,6 +18,7 @@ Contoh:
 import argparse
 import json
 import os
+import re
 import socket
 import ssl
 import sys
@@ -468,6 +469,16 @@ def fmt_size(n):
     return "%.1f MB" % (n / 1024 / 1024)
 
 
+_TERM_UNSAFE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _term_safe(s):
+    """Strip control chars so a hostile page can't inject terminal escapes
+    via <title>, headings, or link text. --json output is unaffected
+    (json.dumps escapes these safely)."""
+    return _TERM_UNSAFE.sub("", s if isinstance(s, str) else str(s))
+
+
 def report_text(res, insp, proxy_str):
     L = []
     L.append("llantern — %s" % res["url"])
@@ -477,13 +488,13 @@ def report_text(res, insp, proxy_str):
     if res["redirects"]:
         L.append("  redirect : %d hop" % len(res["redirects"]))
     if insp["title"]:
-        L.append("  judul    : %s" % insp["title"])
+        L.append("  judul    : %s" % _term_safe(insp["title"]))
     if insp["description"]:
-        L.append("  deskripsi: %s" % insp["description"])
+        L.append("  deskripsi: %s" % _term_safe(insp["description"]))
     if insp["headings"]:
         L.append("  heading  :")
         for h in insp["headings"][:12]:
-            L.append("    %s %s" % (h["level"], h["text"]))
+            L.append("    %s %s" % (h["level"], _term_safe(h["text"])))
         if len(insp["headings"]) > 12:
             L.append("    … +%d lagi" % (len(insp["headings"]) - 12))
     lc = insp["link_counts"]
@@ -494,7 +505,7 @@ def report_text(res, insp, proxy_str):
                              "anchor", "mailto", "other") if k in lc)
                 or "tidak ada"))
     for d in insp["top_domains"][:5]:
-        L.append("             · %s (%d)" % (d["domain"], d["count"]))
+        L.append("             · %s (%d)" % (_term_safe(d["domain"]), d["count"]))
     L.append("  struktur : %d form · %d gambar · %d script · ~%d kata"
              % (insp["forms"], insp["images"], insp["scripts"], insp["words"]))
     return "\n".join(L)
