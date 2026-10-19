@@ -25,6 +25,13 @@ import time
 import urllib.parse
 from html.parser import HTMLParser
 
+# Clean exit on broken pipes (e.g. `llantern.py x.onion | head`).
+try:
+    from signal import SIG_DFL, SIGPIPE, signal
+    signal(SIGPIPE, SIG_DFL)
+except Exception:
+    pass
+
 VERSION = "1.0.0"
 DEFAULT_PROXY = "127.0.0.1:9050"
 DEFAULT_TIMEOUT = 30

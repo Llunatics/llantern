@@ -132,3 +132,9 @@ class TestFmtSize(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSigpipe(unittest.TestCase):
+    def test_broken_pipe_no_traceback(self):
+        import signal
+        self.assertEqual(signal.getsignal(signal.SIGPIPE), signal.SIG_DFL)
