@@ -208,6 +208,14 @@ class TestFetch(unittest.TestCase):
             fetch("http://127.0.0.1:%d/a\r\nX: 1" % self.hport,
                   proxy=self.proxy, timeout=10, max_bytes=1000,
                   max_redirects=5, user_agent="t")
+    def test_url_kontrol_lain_ditolak(self):
+        # fuzz round 2: gate dulu hanya CR/LF; NUL/ESC/DEL juga ditolak
+        for bad in ("\x00", "\x1b[2J", "\x7f", "\x07"):
+            with self.assertRaises(FetchError, msg=repr(bad)):
+                fetch("http://127.0.0.1:%d/a%sb" % (self.hport, bad),
+                      proxy=self.proxy, timeout=10, max_bytes=1000,
+                      max_redirects=5, user_agent="t")
+
 
     def test_timeout_jadi_fetch_error_bukan_traceback(self):
         with self.assertRaises(FetchError):

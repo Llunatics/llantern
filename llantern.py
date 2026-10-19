@@ -230,9 +230,10 @@ def fetch(url, proxy, timeout, max_bytes, max_redirects, user_agent):
         url = "http://" + url
     visited = []
     for _ in range(max_redirects + 1):
-        if "\r" in url or "\n" in url:
-            # Jangan biarkan CR/LF lolos ke request line mentah (request
-            # smuggling via argumen CLI yang jahat / Location redirect).
+        if any(ord(c) < 32 or ord(c) == 127 for c in url):
+            # Jangan biarkan karakter kontrol lolos ke request line mentah
+            # (request smuggling via argumen CLI yang jahat / Location
+            # redirect). fuzz round 2: dulu hanya CR/LF yang dicek.
             raise FetchError("URL mengandung karakter kontrol: %r" % url[:80])
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
