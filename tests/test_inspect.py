@@ -1,0 +1,97 @@
+"""Unit test PageInspector: judul, heading, klasifikasi link, statistik."""
+
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from llantern import PageInspector
+
+SAMPLE = """<!doctype html><html><head>
+<title>  Pasar Gelap  Demo </title>
+<meta name="description" content="Contoh hidden service.">
+</head><body>
+<h1>Selamat datang</h1>
+<h2>Katalog</h2><h2>Kontak</h2>
+<p>Halo dunia, ini contoh teks.</p>
+<a href="http://abc123.onion/barang">Barang A</a>
+<a href="http://xyz789.onion/lain">Hidden service lain</a>
+<a href="https://example.com/luar">Luar</a>
+<a href="http://example.com/luar2">Luar2</a>
+<a href="/internal/halaman">Internal</a>
+<a href="relatif/lain">Relatif</a>
+<a href="#fragmen">Loncat</a>
+<a href="mailto:admin@abc123.onion">Email</a>
+<a href="javascript:void(0)">JS</a>
+<form action="/cari"><input name="q"></form>
+<img src="a.png"><img src="b.png">
+<script src="x.js"></script>
+</body></html>"""
+
+
+class TestInspector(unittest.TestCase):
+    def setUp(self):
+        self.insp = PageInspector("http://abc123.onion/")
+        self.insp.feed(SAMPLE)
+        self.s = self.insp.summary()
+
+    def test_title_dinormalisasi(self):
+        self.assertEqual(self.s["title"], "Pasar Gelap Demo")
+
+    def test_description(self):
+        self.assertEqual(self.s["description"], "Contoh hidden service.")
+
+    def test_headings(self):
+        self.assertEqual(
+            self.s["headings"],
+            [{"level": "h1", "text": "Selamat datang"},
+             {"level": "h2", "text": "Katalog"},
+             {"level": "h2", "text": "Kontak"}])
+
+    def test_klasifikasi_link(self):
+        by = {}
+        for l in self.s["links"]:
+            by.setdefault(l["class"], []).append(l["url"])
+        self.assertEqual(by["onion"], ["http://xyz789.onion/lain"])
+        self.assertEqual(len(by["external"]), 2)
+        self.assertEqual(len(by["internal"]), 3)  # se-host + /internal + relatif
+        self.assertEqual(len(by["anchor"]), 1)
+        self.assertEqual(len(by["mailto"]), 1)
+        self.assertEqual(len(by["other"]), 1)     # javascript:
+        self.assertEqual(self.s["link_total"], 9)
+
+    def test_link_counts(self):
+        self.assertEqual(self.s["link_counts"]["onion"], 1)
+        self.assertEqual(self.s["link_counts"]["external"], 2)
+
+    def test_top_domains(self):
+        doms = {d["domain"]: d["count"] for d in self.s["top_domains"]}
+        self.assertEqual(doms.get("xyz789.onion"), 1)
+        self.assertEqual(doms.get("example.com"), 2)
+        self.assertNotIn("abc123.onion", doms)  # host sendiri = internal
+
+    def test_struktur(self):
+        self.assertEqual(self.s["forms"], 1)
+        self.assertEqual(self.s["images"], 2)
+        self.assertEqual(self.s["scripts"], 1)
+
+    def test_words_mengabaikan_script(self):
+        # kata di <script>/<style> tidak dihitung; teks body dihitung
+        self.assertGreater(self.s["words"], 5)
+
+    def test_html_rusak_tidak_meledak(self):
+        insp = PageInspector("http://x.onion/")
+        insp.feed("<html><h1>tanpa tutup<a href=/x>link")
+        s = insp.summary()
+        self.assertEqual(s["link_total"], 1)
+
+    def test_relative_url_diresolve_ke_base(self):
+        insp = PageInspector("http://abc123.onion/sub/dir/")
+        insp.feed('<a href="../naik">x</a>')
+        self.assertEqual(insp.summary()["links"][0]["url"],
+                         "http://abc123.onion/sub/naik")
+
+
+if __name__ == "__main__":
+    unittest.main()
