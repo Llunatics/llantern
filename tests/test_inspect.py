@@ -148,3 +148,36 @@ class TestRegressionDeep8Inspect(unittest.TestCase):
         insp = PageInspector("http://x.onion/")
         insp.feed(html)
         self.assertEqual(insp.summary()["description"], desc)
+
+    # Audit 2026-10-21: og:description fallback + href kosong.
+    def test_og_description_fallback(self):
+        html = ('<html><head><meta property="og:description" '
+                'content="Dari OpenGraph."></head><body></body></html>')
+        insp = PageInspector("http://x.onion/")
+        insp.feed(html)
+        self.assertEqual(insp.summary()["description"], "Dari OpenGraph.")
+
+    def test_twitter_description_fallback(self):
+        html = ('<html><head><meta property="twitter:description" '
+                'content="Dari Twitter card."></head><body></body></html>')
+        insp = PageInspector("http://x.onion/")
+        insp.feed(html)
+        self.assertEqual(insp.summary()["description"], "Dari Twitter card.")
+
+    def test_meta_description_menang_atas_og(self):
+        html = ('<html><head>'
+                '<meta property="og:description" content="OG.">'
+                '<meta name="description" content="Meta asli.">'
+                '</head><body></body></html>')
+        insp = PageInspector("http://x.onion/")
+        insp.feed(html)
+        self.assertEqual(insp.summary()["description"], "Meta asli.")
+
+    def test_href_kosong_jadi_internal(self):
+        html = '<html><body><a href="">diri sendiri</a></body></html>'
+        insp = PageInspector("http://x.onion/halaman")
+        insp.feed(html)
+        links = insp.summary()["links"]
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0]["class"], "internal")
+        self.assertEqual(links[0]["url"], "http://x.onion/halaman")

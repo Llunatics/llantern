@@ -191,6 +191,12 @@ class TestFetch(unittest.TestCase):
         with self.assertRaises(FetchError):
             self._fetch("/loop", max_redirects=3)
 
+    def test_redirect_tidak_diikuti_bila_nol(self):
+        # max_redirects=0: respons 3xx dikembalikan apa adanya, bukan error.
+        r = self._fetch("/pindah", max_redirects=0)
+        self.assertEqual(r["status"], 302)
+        self.assertEqual(r["redirects"], [])
+
     def test_chunked_body(self):
         r = self._fetch("/chunked")
         self.assertEqual(r["status"], 200)

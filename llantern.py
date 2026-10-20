@@ -229,7 +229,8 @@ def fetch(url, proxy, timeout, max_bytes, max_redirects, user_agent):
     if "://" not in url:
         url = "http://" + url
     visited = []
-    for _ in range(max_redirects + 1):
+    followed = 0
+    while True:
         if any(ord(c) < 32 or ord(c) == 127 for c in url):
             # Jangan biarkan karakter kontrol lolos ke request line mentah
             # (request smuggling via argumen CLI yang jahat / Location
@@ -288,10 +289,19 @@ def fetch(url, proxy, timeout, max_bytes, max_redirects, user_agent):
 
         visited.append(url)
         if status in REDIRECTS and headers.get("location"):
-            url = urllib.parse.urljoin(url, headers["location"])
-            if url in visited:
-                raise FetchError("redirect berputar: %s" % url)
-            continue
+            # max_redirects=0 berarti "jangan ikuti redirect": kembalikan
+            # respons 3xx apa adanya (ala curl --max-redirs 0), bukan error.
+            # Dulu loop for selalu raise FetchError di sini sehingga
+            # --max-redirects 0 tak pernah bisa sukses pada URL yang
+            # me-redirect.
+            if followed < max_redirects:
+                url = urllib.parse.urljoin(url, headers["location"])
+                if url in visited:
+                    raise FetchError("redirect berputar: %s" % url)
+                followed += 1
+                continue
+            if max_redirects > 0:
+                raise FetchError("terlalu banyak redirect (>%d)" % max_redirects)
         return {
             "url": url,
             "status": status,
@@ -302,7 +312,6 @@ def fetch(url, proxy, timeout, max_bytes, max_redirects, user_agent):
             "redirects": visited[:-1],
             "is_onion": is_onion,
         }
-    raise FetchError("terlalu banyak redirect (>%d)" % max_redirects)
 
 
 # ---------------------------------------------------------------------------
@@ -361,11 +370,21 @@ class PageInspector(HTMLParser):
         a = dict(attrs)
         if tag == "title":
             self._in_title = True
-        elif tag == "meta" and a.get("name", "").lower() == "description":
-            self.description = a.get("content", "").strip()[:300]
+        elif tag == "meta":
+            name = a.get("name", "").lower()
+            prop = a.get("property", "").lower()
+            if name == "description":
+                self.description = a.get("content", "").strip()[:300]
+            elif not self.description and prop in ("og:description",
+                                                   "twitter:description"):
+                # Fallback: banyak halaman (termasuk template modern)
+                # hanya mengisi og:description tanpa meta description.
+                self.description = a.get("content", "").strip()[:300]
         elif tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
             self._cur_heading = [tag, ""]
-        elif tag == "a" and a.get("href"):
+        elif tag == "a" and "href" in a:
+            # href="" adalah self-link yang valid -> klasifikasikan
+            # sebagai internal, bukan dibuang diam-diam.
             absu, cls = self._classify(a["href"].strip(), self.base)
             self._cur_link = [absu, "", cls]
         elif tag == "form":

@@ -8,11 +8,11 @@ Lentera buat dark web — ambil halaman `.onion` lewat Tor, lalu bedah strukturn
 
 - Fetch HTTP/HTTPS lewat proxy SOCKS5 Tor (default `127.0.0.1:9050`)
 - Hostname dikirim mentah ke proxy (ATYP domain) — `.onion` **tidak** di-resolve via DNS lokal
-- Ikuti redirect (maks. 5, bisa diatur), dukung `chunked` & `content-length`
-- Bedah halaman: judul, meta description, heading h1–h6, link, form, gambar, script, jumlah kata
-- Klasifikasi link: `onion` (hidden service lain) · `external` · `internal` · `anchor` · `mailto` · `other`
+- Ikuti redirect (maks. 5, bisa diatur; `--max-redirects 0` = kembalikan respons 3xx apa adanya), dukung `chunked` & `content-length`
+- Bedah halaman: judul, meta description (fallback `og:description` / `twitter:description`), heading h1–h6, link, form, gambar, script, jumlah kata
+- Klasifikasi link: `onion` (hidden service lain) · `external` · `internal` (termasuk `<a href="">`) · `anchor` · `mailto` · `other`
 - Output laporan teks atau `--json`; opsi `--save-html` untuk arsip mentah
-- 52 unit/integration test (termasuk SOCKS5 palsu + HTTP server lokal)
+- 66 unit/integration test (termasuk SOCKS5 palsu + HTTP server lokal)
 - Pengerasan: URL dengan CR/LF ditolak (anti request-smuggling), port tak
   valid / timeout / TLS gagal menjadi `FetchError` yang rapi (bukan
   traceback), batas 200 header, batas 5000 link & 2000 heading anti-DoS
@@ -54,7 +54,7 @@ python3 llantern.py example123.onion --proxy 127.0.0.1:9150
 | `--proxy HOST:PORT` | `127.0.0.1:9050` | Proxy SOCKS5 Tor |
 | `--timeout DETIK` | `30` | Timeout per koneksi |
 | `--max-bytes N` | `2000000` | Batas ukuran body |
-| `--max-redirects N` | `5` | Batas redirect berantai |
+| `--max-redirects N` | `5` | Batas redirect berantai; `0` = jangan ikuti, kembalikan respons 3xx |
 | `--user-agent UA` | `llantern/<versi>` | User-Agent kustom |
 | `--json` | — | Keluarkan JSON, bukan laporan teks |
 | `--save-html DIR` | — | Simpan HTML mentah tiap URL ke DIR |
