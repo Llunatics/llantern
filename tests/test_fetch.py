@@ -6,6 +6,7 @@ jalur llantern — handshake, request, redirect, chunked — bekerja.
 """
 
 import http.server
+import io
 import os
 import select
 import socket
@@ -41,6 +42,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", "/loop")
             self.send_header("Content-Length", "0")
             self.end_headers()
+        elif self.path == "/loc200":
+            self.send_response(200)
+            self.send_header("Location", "/")
+            self.send_header("Content-Length", "4")
+            self.end_headers()
+            self.wfile.write(b"done")
         elif self.path == "/chunked":
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
@@ -271,3 +278,87 @@ class TestFetch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _FakeSock:
+    """Socket stub for socks5_connect unit tests (no real proxy)."""
+
+    def __init__(self, replies):
+        self._replies = list(replies)
+
+    def sendall(self, data):
+        pass
+
+    def recv(self, n):
+        return self._replies.pop(0) if self._replies else b""
+
+    def close(self):
+        pass
+
+
+class TestRegressionDeep8(unittest.TestCase):
+    """Regression guards from deep-8 mutation testing (2026-10-20)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.httpd = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        cls.hport = cls.httpd.server_address[1]
+        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
+        cls.socks = FakeSocks5()
+        cls.socks.start()
+        cls.proxy = ("127.0.0.1", cls.socks.port)
+
+    def _fetch(self, path, **kw):
+        base = dict(proxy=self.proxy, timeout=10, max_bytes=2_000_000,
+                    max_redirects=5, user_agent="llantern-test")
+        base.update(kw)
+        return fetch("http://127.0.0.1:%d%s" % (self.hport, path), **base)
+
+    # L01: a proxy that selects an auth method (0x02) must be refused.
+    def test_proxy_demanding_auth_rejected(self):
+        from unittest import mock
+        fake = _FakeSock([b"\x05\x02"])
+        with mock.patch("llantern.socket.create_connection", return_value=fake):
+            with self.assertRaises(LlantError) as cm:
+                socks5_connect("127.0.0.1", 9999, "contoh.onion", 80, timeout=5)
+        self.assertIn("handshake", str(cm.exception))
+
+    # L02: hostnames longer than 255 bytes cannot fit the SOCKS5 length byte.
+    def test_hostname_over_255_bytes_rejected(self):
+        from unittest import mock
+        fake = _FakeSock([b"\x05\x00"])
+        with mock.patch("llantern.socket.create_connection", return_value=fake):
+            with self.assertRaises(FetchError) as cm:
+                socks5_connect("127.0.0.1", 9999,
+                               ".".join(["a" * 60] * 5), 80, timeout=5)
+        self.assertIn("terlalu panjang", str(cm.exception))
+
+    # L06: chunked bodies are capped by max_bytes too.
+    def test_chunked_body_over_max_bytes_rejected(self):
+        from llantern import _read_response
+        data = (b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                b"5\r\nhello\r\n5\r\nworld\r\n0\r\n\r\n")
+        with self.assertRaises(FetchError) as cm:
+            _read_response(io.BytesIO(data), 8)
+        self.assertIn("melebihi batas", str(cm.exception))
+
+    # L07: an over-limit Content-Length is rejected up front (the
+    # content-length read loop itself has no size check).
+    def test_content_length_over_max_bytes_rejected_upfront(self):
+        from llantern import _read_response
+        data = b"HTTP/1.1 200 OK\r\nContent-Length: 15000000\r\n\r\n"
+        with self.assertRaises(FetchError) as cm:
+            _read_response(io.BytesIO(data), 2_000_000)
+        self.assertIn("melebihi batas", str(cm.exception))
+
+    # L09: a self-redirect is a loop, reported as such.
+    def test_redirect_loop_reported_as_loop(self):
+        with self.assertRaises(FetchError) as cm:
+            self._fetch("/loop", max_redirects=10)
+        self.assertIn("berputar", str(cm.exception))
+
+    # L10: a 200 response carrying a Location header is NOT a redirect.
+    def test_200_with_location_header_not_followed(self):
+        r = self._fetch("/loc200")
+        self.assertEqual(r["status"], 200)
+        self.assertTrue(r["url"].endswith("/loc200"))

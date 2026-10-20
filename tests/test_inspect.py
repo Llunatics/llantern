@@ -126,3 +126,25 @@ class TestFuzzParser(unittest.TestCase):
                 insp.summary()
             except Exception as e:
                 self.fail("parser meledak pada %r: %s" % (s[:60], e))
+
+
+class TestRegressionDeep8Inspect(unittest.TestCase):
+    """Regression guards from deep-8 mutation testing (2026-10-20)."""
+
+    # L13: script/style text must not inflate the word count.
+    def test_script_and_style_words_not_counted(self):
+        html = ("<html><body><p>satu dua tiga</p>"
+                "<script>empat lima enam tujuh delapan sembilan</script>"
+                "<style>sebelas duabelas tigabelas</style></body></html>")
+        insp = PageInspector("http://x.onion/")
+        insp.feed(html)
+        self.assertEqual(insp.summary()["words"], 3)
+
+    # L20: meta descriptions are kept up to 300 chars.
+    def test_description_kept_to_300_chars(self):
+        desc = "x" * 100
+        html = ('<html><head><meta name="description" content="%s"></head>'
+                "<body></body></html>") % desc
+        insp = PageInspector("http://x.onion/")
+        insp.feed(html)
+        self.assertEqual(insp.summary()["description"], desc)

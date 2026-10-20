@@ -191,3 +191,17 @@ class TestTermSafeReport(unittest.TestCase):
         self.assertNotIn("\x1b", out)
         self.assertNotIn("\x07", out)
         self.assertIn("evil.onion", out)
+
+
+class TestRegressionDeep8Cli(unittest.TestCase):
+    """Regression guard from deep-8 mutation testing (2026-10-20)."""
+
+    # L19: only 200 responses get parsed as pages; a 404 HTML body is skipped.
+    def test_404_html_body_not_parsed_as_page(self):
+        with mock.patch.object(llantern, "fetch",
+                               return_value=_res(status=404)):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = main(["abc123.onion", "--json"])
+        self.assertEqual(rc, 1)
+        self.assertIsNone(json.loads(out.getvalue())["page"])
